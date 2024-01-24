@@ -1,0 +1,330 @@
+# Global variables
+$splitedFilesArray = $(splitedFilesArray) #"Configuration","ObjectConfig"
+$projectLocation = "$(projectLocation)" #"D:\Bitbucket\identityiq_build\"
+$customImportLocation = "$(customImportLocation)" #"D:\Bitbucket\identityiq_build\custom_import\"
+$iiqLocation = "$(iiqLocation)" #"D:\Tomcat\webapps\identityiq\WEB-INF\bin\iiq"
+$logFileLocation = "$(logFileLocation)" #"D:\Bitbucket\identityiq_build\custom_import\log.txt"
+$buildOrRoll = "$(buildOrRoll)"  #"non" #if rollback run the oposite command
+git config --global --add safe.directory D:/Bitbucket/identityiq_build
+#function to get the object type and object name
+function getObjInfo($line) 
+{
+    #$line
+    $line -match ".\t(?<content>.*)$"
+
+    $getObjPath = $matches['content']
+    #$getObjPath
+
+    $fullPath = Join-Path -Path $projectLocation -ChildPath $getObjPath
+    #$fullPath
+
+    $objType = (((Get-Content $fullPath) -match '\S')[-1]) -replace '\W'
+    #$objType
+    if ($objType -like "sailpoint"){
+        $objType = (((Get-Content $fullPath) -match '\S' -notmatch 'sailpoint|importaction')[-1]) -replace '\W'
+    }elseif($objType -like "identity"){
+        $firstLine = ((Get-Content $fullPath) -match "<$objType ")[0] 
+        if ($firstLine -match 'workgroup="true"'){
+            ((Get-Content $fullPath) -match "<$objType ")[0] -match ' name=(?<objName>.+?")'
+
+            $response = "" | Select-Object -Property type,name
+            $response.type = "workgroup"
+            $response.name = $matches['objName']
+
+            return $response
+        }
+    }
+    ((Get-Content $fullPath) -match "<$objType ")[0] -match ' name=(?<objName>.+?")'
+
+    $response = "" | Select-Object -Property type,name
+    $response.type = $objType
+    $response.name = $matches['objName']
+
+    return $response
+}
+function getDelObjInfo($line) 
+{
+    #$line
+    $line -match ".\t(?<content>.*)$"
+
+    $getObjPath = $matches['content']
+    #$getObjPath
+
+    $delFile = git show HEAD@`{"3 minutes ago"`}:$getObjPath
+
+    $objType = (($delFile -match '\S')[-1]) -replace '\W'
+    $objType
+
+    if ($objType -like "sailpoint"){
+        $objType = (($delFile -match '\S' -notmatch 'sailpoint|importaction')[-1]) -replace '\W'
+    }elseif($objType -like "identity"){
+        $firstLine = ($delFile -match "<$objType ")[0] 
+        if ($firstLine -match 'workgroup="true"'){
+            ($delFile -match "<$objType ")[0] -match ' name=(?<objName>.+?")'
+
+            $response = "" | Select-Object -Property type,name
+            $response.type = "workgroup"
+            $response.name = $matches['objName']
+
+            return $response
+        }
+    }
+    ($delFile -match "<$objType ")[0] -match ' name=(?<objName>.+?")'
+
+    $response = "" | Select-Object -Property type,name
+    $response.type = $objType
+    $response.name = $matches['objName']
+
+    $response.type
+    $response.name
+
+    return $response
+}
+function Remove-BomFromFile ($OldPath, $NewPath)
+{
+  $Content = Get-Content $OldPath -Raw
+  $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+  [IO.File]::WriteAllLines($NewPath, $Content, $Utf8NoBomEncoding)
+}
+
+#set current path to custom_import folder
+Set-Location -Path $customImportLocation
+Get-Location
+
+if ($buildOrRoll -like "roll"){
+    #get the name of the latest hotfix folder
+    $lastFolderName = Get-Item "*_hotfix" | Sort-Object | Select-Object -Last 1 | Select-Object name
+
+    #change path to the last directory
+    Set-Location $lastFolderName.Name
+    Get-Location
+
+    $rollbackFile = Get-Item "*_rollback.txt"
+    $rollbackPath = $rollbackFile.FullName.ToString()
+    Remove-BomFromFile -OldPath $rollbackPath -NewPath $rollbackPath 
+
+    Set-Location "xml_backups"
+    Get-Location
+
+    #import the rollback file
+    cmd.exe /c "$iiqLocation console  -u `"$(IIQ_USER)`" -p `"$(IIQ_PWD)`" < $rollbackPath " | Out-File -Append $logFileLocation 
+    
+    #stop script now
+    Write-Output "Rolled back successfully from file $rollbackFile"
+    exit;
+}
+Write-Output 1
+#get the name of the latest hotfix folder
+$folderName = Get-Item "*_hotfix" | Sort-Object | Select-Object -Last 1 | Select-Object name
+$folderName.Name
+
+#get the number of the last fodler
+$splitInt = [int]($folderName.Name -match '\d+' | ForEach-Object {$Matches[0]} )
+
+#increment the number from the last fodler
+$nextInt = (1+ $splitInt).ToString('0000')
+#change number
+$changeStringNumber = $nextInt.ToString()
+
+#new hotfix folder name
+#new directory
+$newHotfixFolder = New-Item -Path $changeStringNumber"_hotfix\" -ItemType Directory
+
+#change path to the newly created directory
+Set-Location $newHotfixFolder
+Get-Location
+
+#create the three files
+$importFile = New-Item -Path $changeStringNumber"_import.txt" -ItemType File
+$backupFile = New-Item -Path $changeStringNumber"_backup.txt" -ItemType File
+$rollbackFile = New-Item -Path $changeStringNumber"_rollback.txt" -ItemType File
+#temporary file that will be used to compose the import and backup files and then delete
+$gitResponse = New-Item -Path "gitResponse.txt" -ItemType File
+
+Write-Output "git 1"
+#get the new changes from git
+#pipe difference to gitResponse file
+#git diff HEAD^ HEAD --name-status > $gitResponse
+$oldGitId = git rev-parse HEAD
+git checkout latest | Write-Output
+Write-Output "git 2"
+git branch | Write-Output
+
+Write-Output "Old git id $oldGitId" | Out-File -Append $logFileLocation
+
+git pull | Out-File -Append $logFileLocation
+Write-Output "git 3"
+
+$newGitId = git rev-parse HEAD
+
+Write-Output "New git Id $newGitId" | Out-File -Append $logFileLocation
+Write-Output "git 4"
+
+git diff $oldGitId $newGitId --name-status > $gitResponse | Out-File -Append $logFileLocation
+
+Write-Output 2
+
+
+<#
+    check if file is in config folder
+    if not, eliminate it from the list
+#>
+Set-Content -Path $gitResponse -Value (Get-Content -Path $gitResponse | Select-String -Pattern 'config/' -SimpleMatch)
+<#
+    check if there are tokens in the new files
+    - in that case we will need a build
+#>
+foreach($line in Get-Content $gitResponse) {
+    $filePath = $line.Split("`t")[1]
+    $filePath
+    
+    If ($line.Split("`t")[0] -notmatch '[D]'){
+        If (Select-String "..\..\$filePath" -Pattern '%%' -SimpleMatch -Quiet){
+            Write-Output "tokens found in $filePath afrtifact"
+
+            Set-Location $projectLocation
+            Get-Location
+
+            Write-Output "building clean"| Out-File -Append $logFileLocation
+
+            cmd.exe /c "build clean" | Out-File -Append $logFileLocation
+
+            Write-Output "building tokens"| Out-File -Append $logFileLocation
+
+            cmd.exe /c "build init-properties prepareFiles validatetokens" | Out-File -Append $logFileLocation
+
+            Set-Location $newHotfixFolder
+            Get-Location
+            break
+        }
+        else{
+            Write-Output "no tokens found in the artifact $fileName"
+        }
+    }
+}
+
+Write-Output "2.2"
+
+foreach($line in Get-Content $gitResponse) {
+    $filePath = $line.Split("`t")[1]
+    $filePath
+    
+    If ($line.Split("`t")[0] -notmatch '[D]'){
+        If (Select-String "..\..\$filePath" -Pattern '%%' -SimpleMatch -Quiet){
+            Write-Output "tokens found in $filePath afrtifact"
+
+            $replacePath = $filePath.replace("config/","")
+
+            $newFilePath = "build/extract/WEB-INF/config/custom/$replacePath"
+
+            (Get-Content $gitResponse).Replace($filePath,$newFilePath) | Set-Content $gitResponse
+        }
+    }
+}
+
+<#
+check if there are object config of type identity
+    - delete entry in file
+    - export old one
+    - import new one
+#>
+If (Select-String $gitResponse -Pattern 'objectconfig/objectconfig-identity' -SimpleMatch -Quiet){
+    Write-Output "Contains objectconfig-identity"
+    Set-Content -Path $gitResponse -Value (Get-Content -Path $gitResponse | Select-String -Pattern 'objectconfig/objectconfig-identity' -NotMatch)
+
+    $idntObjConf = New-Item -Path "idntObjConf_New.xml" -ItemType File
+
+    Get-Content "..\..\config\ObjectConfig\ObjectConfig-Identity\_ObjectConfig-Identity.header" | Out-File -Append $idntObjConf
+    Get-Content "..\..\config\ObjectConfig\ObjectConfig-Identity\*.xml" | Out-File -Append $idntObjConf
+    Get-Content "..\..\config\ObjectConfig\ObjectConfig-Identity\_ObjectConfig-Identity.footer" | Out-File -Append $idntObjConf
+
+    $newFodlerName = $newHotfixFolder.Name
+
+    'checkout ' + 'ObjectConfig ' + 'Identity' + " idntObjConf_Old.xml -clean" |  Out-File -Append $backupFile
+    'import ' + "custom_import/$newFodlerName/xml_backups/idntObjConf_New.xml" |  Out-File -Append $importFile
+    'import ' + "idntObjConf_Old.xml" |  Out-File -Append $rollbackFile
+}
+else{
+    Write-Output "Not Contain ObjectConfig-Identity"
+}
+
+<#
+    compose the import file
+    which will contain the git difference
+#>
+foreach($line in Get-Content $gitResponse) {
+# if [R]enamed bug
+    if ($line -match '[D]\t.*\.xml'){
+        #the file was deleted
+        
+        $resp = getDelObjInfo($line)
+
+        'delete ' + $resp.type + ' ' + $resp.name |  Out-File -Append $importFile
+        
+    }
+    else {
+        #replace with import and write to import file
+        $line -replace '[A,C,M,R,T,U,X,B]\t', 'import ' | Out-File -Append $importFile
+    }
+}
+Write-Output 3
+<#
+  compose the rollback file which will contain all the artifacts that are in the import list with the
+  exception of the addded[A] ones which in case of a rollback will need to be deleted unlike the rest 
+  of the artifacts [M,D] that will be imported
+#>
+foreach($line in Get-Content $gitResponse){
+    if ($line -match '[D]\t.*\.xml' ){
+        #if file is deleted run the other function
+        $resp = getDelObjInfo($line)
+        $fileName = $resp.name -replace '\W'
+        
+        'checkout ' + $resp.type + ' ' + $resp.name + ' ' + "$fileName.xml -clean" |  Out-File -Append $backupFile    
+
+        'import ' + "$fileName.xml" |  Out-File -Append $rollbackFile
+    }
+    elseif($line -match '[A]\t.*\.xml' ){
+        #the file was added which means that it must be 'delete'd
+        $resp = getObjInfo($line)
+
+        if ($splitedFilesArray -inotcontains $resp.type){
+            'delete ' + $resp.type + ' ' + $resp.name |  Out-File -Append $rollbackFile
+        }
+    }
+    else{
+        $resp = getObjInfo($line)
+        $fileName = $resp.name -replace '\W'
+        
+        'checkout ' + $resp.type + ' ' + $resp.name + ' ' + "$fileName.xml -clean" |  Out-File -Append $backupFile    
+
+        'import ' + "$fileName.xml" |  Out-File -Append $rollbackFile
+    }
+}
+Write-Output 4
+
+$backupPath = $backupFile.FullName.ToString()
+$importPath = $importFile.FullName.toString()
+
+#checkout from backupFile
+if (![String]::IsNullOrWhiteSpace((Get-content $backupPath))){
+    Remove-BomFromFile -OldPath $backupPath -NewPath $backupPath 
+    Write-Output 4.1
+    cmd.exe /c "$iiqLocation console -u `"$(IIQ_USER)`" -p `"$(IIQ_PWD)`" < $backupPath " | Out-File -Append $logFileLocation
+    Write-Output "Backed up successfully"
+}
+Write-Output 5
+#import from importfile
+if (![String]::IsNullOrWhiteSpace((Get-content $importPath))){
+    Remove-BomFromFile -OldPath $importPath -NewPath $importPath 
+    Set-Location -Path $projectLocation
+    cmd.exe /c "$iiqLocation console  -u `"$(IIQ_USER)`" -p `"$(IIQ_PWD)`" < $importPath " | Out-File -Append $logFileLocation
+    Write-Output "Imported successfully"
+}
+
+Set-Location -Path $newHotfixFolder
+Get-Location
+#move all the xml files in a different folder
+$backupFolder = New-Item -Path "xml_backups" -ItemType Directory
+
+#Get-ChildItem -Path "" -Recurse -File | Move-Item -Destination backupFolder
+Get-ChildItem -Path . -Filter "*.xml" -Recurse | Move-Item -Destination $backupFolder -Exclude "idntObjConf_New.xml"
