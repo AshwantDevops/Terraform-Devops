@@ -1,0 +1,24 @@
+# Set the local directory path
+$localDirectory = "D:\Bitbucket\identityiq_build"
+
+# Set the Bitbucket branch name
+$bitbucketBranch = "NLAMS_New_UAT"
+
+# Change to the local directory
+Set-Location -Path $localDirectory
+
+# Fetch changes from the Bitbucket repository
+git fetch origin $bitbucketBranch
+
+# Get the list of changed files
+$changedFiles = git diff --name-only origin/$bitbucketBranch
+
+# If there are changes, update the local directory
+if ($changedFiles) {
+    # Reset the local directory to the state of the Bitbucket branch
+    git reset --hard origin/$bitbucketBranch
+
+    Write-Output "Files and folders updated."
+} else {
+    Write-Output "No changes found."
+}
