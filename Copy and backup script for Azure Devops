@@ -1,0 +1,31 @@
+-------------------------------------------------------------------------------------------------------------------
+echo "Taking the Backup of the previous tomcat deployment"
+mkdir D:\AzureDevOps\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+move D:\Tomcat\webapps\identityiq.war D:\AzureDevOps\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+xcopy /E D:\Tomcat\webapps\identityiq D:\AzureDevOps\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+xcopy /E  "C:\azagent\A1\_work\r1\a\_Sailpoint IIQ NS - UAT Build Pipeline\identityiq.war\s\build\deploy\identityiq.war" "D:\Tomcat\webapps\"
+-------------------------------------------------------------------------------------------------------------------------------------------------
+echo "I AM"
+whoami
+echo "-----------------------------------------START-----------------------------------------"
+echo "Taking the backup of the current build artifact" 
+echo %Build_BuildNumber%
+echo "-----------------------------------------------------------------------------------"
+echo "Taking the backup of the current release"
+mkdir D:\Azure_Agent\AzureDevOpsAgent\backups\Backup_%Build_BuildNumber%
+mkdir D:\Azure_Agent\AzureDevOpsAgent\backups\Backup_%Build_BuildNumber%\binary\
+mkdir D:\Azure_Agent\AzureDevOpsAgent\backups\Backup_%Build_BuildNumber%\exploded\
+xcopy /E D:\Azure_Agent\_work\1\a\build\deploy\identityiq.war D:\Azure_Agents\AzureDevOpsAgent\backups\Backup_%Build_BuildNumber%\binary\
+xcopy /E D:\Azure_Agent\AzureDevOpsAgent\_work\1\s\* D:\Azure_Agents\AzureDevOpsAgent\backups\Backup_%Build_BuildNumber%\exploded\
+echo "-----------------------------------------------------------------------------------"
+echo "Taking the Backup of the previous tomcat deployment"
+mkdir D:\Azure_Agent\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+move D:\Tomcat\webapps\identityiq.war D:\Azure_Agents\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+xcopy /E D:\Tomcat\webapps\identityiq D:\Azure_Agent\IIQDeploymentBackups\Before_%Build_BuildNumber%\
+echo "-----------------------------------------------------------------------------------"
+echo "Deploying the latest build to tomcat"
+xcopy /E D:\Azure_Agent\AzureDevOpsAgent\_work\1\a\build\deploy\identityiq.war D:\Tomcat\webapps\
+echo "-----------------------------------------------------------------------------------"
+echo "Starting the tomcat service"
+net start Tomcat8
+echo "------------------------------------------END-----------------------------------------"
