@@ -1,30 +1,14 @@
+# Define variables
+$repoUrl = "https://example.com/your-repo.git"
+$repoDirectory = "D:\Bitbucket"
 
-# Define repository paths
-$repoPath = "D:\Bitbucket"
-$productionBranch = "production"
-
-# Change directory to the repository path
-Set-Location -Path $repoPath
-
-# Fetch latest changes from remote
-git fetch origin $productionBranch
-
-# Check if there are any changes in the production branch
-$changes = git diff --name-only origin/$productionBranch
-
-if ($changes) {
-    # Pull changes from the production branch
-    git pull origin $productionBranch
-
-    # Copy updated files to the Bitbucket directory
-    foreach ($file in $changes) {
-        $sourceFile = Join-Path -Path $repoPath -ChildPath $file
-        $destinationFile = Join-Path -Path "D:\Bitbucket" -ChildPath $file
-        Copy-Item -Path $sourceFile -Destination $destinationFile -Force
-        Write-Output "Updated $file in D:\Bitbucket"
-    }
-
-    Write-Output "File changes from the production branch have been updated in D:\Bitbucket"
-} else {
-    Write-Output "No file changes detected in the production branch."
+# Check if the repository directory exists
+if (Test-Path $repoDirectory -PathType Container) {
+    # If directory exists, remove it recursively
+    Remove-Item -Path $repoDirectory -Recurse -Force
 }
+
+# Clone the repository to the specified directory
+git clone $repoUrl $repoDirectory
+
+Write-Output "Repository cloned to $repoDirectory"
